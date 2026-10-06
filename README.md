@@ -17,11 +17,14 @@ kode.
    playwright install chromium
    ```
 
-   Di VPS tanpa desktop, gunakan Xvfb jika server menolak mode headless:
+   Firewall repositori EPrints memblokir Chromium headless (halaman "Web Page
+   Blocked", User-Agent `HeadlessChrome`), sehingga langkah yang menyentuh
+   EPrints harus memakai `--headed`. Di VPS tanpa desktop, jalankan browser
+   terlihat di dalam Xvfb:
 
    ```bash
    sudo apt install -y xvfb
-   xvfb-run -a python eprint_login.py
+   xvfb-run -a python eprint_login.py --headed
    ```
 
 2. Salin `.env.example` menjadi `.env`, lalu isi:
@@ -33,13 +36,15 @@ kode.
 
 ### Menjalankan
 
-Secara default script berjalan headless dan tidak membuka popup browser:
+Login EPrints harus memakai browser terlihat (`--headed`); mode headless
+ditolak oleh firewall repositori. Di VPS tanpa desktop, awali dengan
+`xvfb-run -a`:
 
 ```bash
-python eprint_login.py
+python eprint_login.py --headed
 ```
 
-Untuk menjalankan dengan browser terlihat, gunakan hanya untuk debugging:
+Tambahkan `--keep-open` untuk membiarkan browser tetap terbuka saat debugging:
 
 ```bash
 python eprint_login.py --headed --keep-open
@@ -54,7 +59,8 @@ python eprint_login.py --lookup-nim H011191003
 ```
 
 Perintah ini login ke RTA, mencari NIM, membuka halaman Detail, dan mencetak
-nama lengkap mahasiswa. Tahap upload EPrints belum dijalankan oleh perintah ini.
+nama lengkap mahasiswa. RTA tidak memblokir mode headless, jadi `--headed`
+tidak diperlukan. Tahap upload EPrints belum dijalankan oleh perintah ini.
 
 ### Menyiapkan satu item pertama
 
@@ -113,8 +119,11 @@ python eprint_login.py --login --headed
 ```
 
 Setelah halaman **Manage deposits** tampil, browser akan ditutup otomatis dan
-cookie login tetap tersimpan di `.eprints-browser-profile`. Jika browser ingin
-dibiarkan terbuka untuk pemeriksaan, gunakan:
+cookie login tetap tersimpan di `.eprints-browser-profile` selama 24 jam; setelah
+itu jalankan perintah ini lagi. Cookie sesi EPrints bersifat sementara sehingga
+script memberinya masa berlaku agar bertahan di profil. Folder profil berisi
+sesi login aktif, diabaikan oleh git (`.gitignore`), dan tidak boleh di-commit.
+Jika browser ingin dibiarkan terbuka untuk pemeriksaan, gunakan:
 
 ```bash
 python eprint_login.py --login --headed --keep-open
@@ -122,6 +131,19 @@ python eprint_login.py --login --headed --keep-open
 
 Dengan opsi tersebut, tekan Enter setelah halaman **Manage deposits** tampil
 untuk menutup browser.
+
+Di VPS tanpa desktop, `--login` dan tombol **Process** tetap membutuhkan
+browser terlihat, jadi awali perintahnya dengan `xvfb-run -a`:
+
+```bash
+xvfb-run -a python eprint_login.py --login
+xvfb-run -a python app.py
+```
+
+Jika Chromium langsung tertutup saat membuka profil (`TargetClosedError`),
+biasanya profil lama hasil clone sudah korup. Hapus folder
+`.eprints-browser-profile`, lalu jalankan `--login` lagi untuk membuat profil
+baru.
 
 Sebelum menekan tombol **Process** di UI, pastikan browser login EPrints sudah
 ditutup. UI memakai profil browser tersimpan yang sama, sehingga browser yang

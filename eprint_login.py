@@ -6,6 +6,7 @@ import argparse
 from datetime import date
 import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -29,6 +30,8 @@ RTA_LOGIN_URL = "https://regtugasakhir.unhas.ac.id/admin/auth/login"
 RTA_ITEMS_URL = "https://regtugasakhir.unhas.ac.id/admin/dashboard/tugas_akhirs"
 PAGE_TIMEOUT_MS = 30_000
 NAVIGATION_TIMEOUT_MS = 60_000
+# EPrints sets session cookies that Chromium drops on exit; keep them this long.
+SAVED_LOGIN_SECONDS = 24 * 60 * 60
 
 
 def _required_env(name: str) -> str:
@@ -53,6 +56,10 @@ class RtaRecord:
     supervisors: tuple[tuple[str, str], ...]
 
 
+def _is_headless(page: Page) -> bool:
+    return "HeadlessChrome" in page.evaluate("navigator.userAgent")
+
+
 def login(page: Page, username: str, password: str) -> None:
     """Log in and navigate to the user's Items page."""
     page.set_default_timeout(PAGE_TIMEOUT_MS)
@@ -61,6 +68,12 @@ def login(page: Page, username: str, password: str) -> None:
     if page.locator("#login_username").count() == 0:
         body = " ".join(page.locator("body").inner_text().split())
         if "blocked" in body.casefold() or "unauthorized" in body.casefold():
+            if _is_headless(page):
+                raise RuntimeError(
+                    "EPrints' firewall rejects headless Chromium. Rerun with "
+                    "--headed (on a server without a desktop: "
+                    "xvfb-run -a python eprint_login.py --headed)."
+                )
             raise RuntimeError(
                 "EPrints blocked the login page before the form loaded. "
                 "Wait and retry, or use a different network/IP."
@@ -103,6 +116,18 @@ def require_saved_login(page: Page) -> None:
         raise RuntimeError(
             "Saved EPrints session is not logged in. Run "
             "`python eprint_login.py --login` once in a visible browser."
+        )
+
+
+def persist_session_cookies(context: BrowserContext) -> None:
+    """Give EPrints session cookies an expiry so the saved profile keeps them."""
+    expires = time.time() + SAVED_LOGIN_SECONDS
+    session_cookies = [
+        cookie for cookie in context.cookies(ITEMS_URL) if cookie["expires"] == -1
+    ]
+    if session_cookies:
+        context.add_cookies(
+            [{**cookie, "expires": expires} for cookie in session_cookies]
         )
 
 
@@ -484,7 +509,11 @@ def main() -> None:
                 page = context.pages[0] if context.pages else context.new_page()
                 login(page, eprint_username, eprint_password)
                 require_saved_login(page)
-                print("Login EPrints tersimpan.")
+                persist_session_cookies(context)
+                print(
+                    "Login EPrints tersimpan selama "
+                    f"{SAVED_LOGIN_SECONDS // 3600} jam."
+                )
                 if args.keep_open:
                     input("Tekan Enter untuk menutup browser...")
             finally:
