@@ -4,3 +4,4 @@ __pycache__/
 *.py[cod]
 eprints_ui.sqlite3
 *.sqlite3-journal
+file/September/
